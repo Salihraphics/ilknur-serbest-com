@@ -133,7 +133,9 @@ function BlogManagementForm() {
       });
 
       if (!response.ok) {
-        throw new Error('Blog yazısı eklenemedi.');
+        const errData = await response.json().catch(() => ({}));
+        const errorMsg = errData?.error || 'Blog yazısı eklenemedi.';
+        throw new Error(errorMsg);
       }
 
       setFormState({
@@ -153,6 +155,8 @@ function BlogManagementForm() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+
+      // Call callback to refresh blog list (removed)
 
       // Success message timeout
       setTimeout(() => {
@@ -256,9 +260,14 @@ function BlogManagementForm() {
             rows={12}
             className="w-full px-4 py-2 border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent resize-none font-mono text-sm"
           />
-          <p className="text-gray-500 text-xs mt-1">
-            En az 50 karakter
-          </p>
+          <div className="flex justify-between items-center mt-2">
+            <p className={`text-xs font-semibold ${formData.content.length < 50 ? 'text-red-600' : 'text-green-600'}`}>
+              {formData.content.length}/50 minimum {formData.content.length < 50 ? '❌' : '✓'}
+            </p>
+            <p className="text-gray-500 text-xs">
+              {formData.content.length > 0 && `${formData.content.length} karakter`}
+            </p>
+          </div>
         </div>
 
         {/* Error Message */}
@@ -278,7 +287,7 @@ function BlogManagementForm() {
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={formState.isLoading}
+          disabled={formState.isLoading || !formData.title.trim() || !formData.excerpt.trim() || formData.content.length < 50 || !formData.image}
           className="w-full bg-gradient-to-r from-indigo-600 to-emerald-500 text-white py-3 rounded-lg font-semibold hover:from-indigo-700 hover:to-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {formState.isLoading ? 'Ekleniyor...' : '📝 Blog Yazısı Ekle'}
@@ -326,7 +335,8 @@ export default function BlogManagement() {
 
   return (
     <div>
-      <h1 className="text-4xl font-bold text-gray-800 mb-8">Blog Yönetimi</h1>
+      <h1 className="text-4xl font-bold text-gray-800 mb-8">Yeni Blog Yazısı Ekle</h1>
+      <p className="text-gray-600 mb-6">Aşağıdaki formu kullanarak yeni bir blog yazısı ekleyin. Yazı yönetimi için Dashboard'a gidin.</p>
       <Suspense
         fallback={
           <div className="flex items-center justify-center min-h-[400px]">

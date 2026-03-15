@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { prisma } from '@/lib/db';
 
@@ -53,8 +53,18 @@ export async function POST(request: NextRequest) {
     const excerpt = formData.get('excerpt') as string;
     const content = formData.get('content') as string;
 
+    console.log('Form data received:', { 
+      hasFile: !!file, 
+      title: title?.slice(0, 20), 
+      excerpt: excerpt?.slice(0, 20),
+      contentLength: content?.length,
+      fileSize: file?.size,
+      fileType: file?.type
+    });
+
     // Validation
     if (!file || !title || !excerpt || !content) {
+      console.warn('Validation failed: missing fields', { file: !!file, title: !!title, excerpt: !!excerpt, content: !!content });
       return NextResponse.json(
         { error: 'Tüm alanlar gerekli' },
         { status: 400 }
@@ -62,6 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!file.type.startsWith('image/')) {
+      console.warn('Validation failed: not an image', { fileType: file.type });
       return NextResponse.json(
         { error: 'Lütfen bir resim dosyası seçiniz.' },
         { status: 400 }
@@ -69,6 +80,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (file.size > 5 * 1024 * 1024) {
+      console.warn('Validation failed: file too large', { fileSize: file.size });
       return NextResponse.json(
         { error: 'Resim boyutu 5MB\'dan küçük olmalıdır.' },
         { status: 400 }
@@ -76,6 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (content.length < 50) {
+      console.warn('Validation failed: content too short', { contentLength: content.length });
       return NextResponse.json(
         { error: 'İçerik en az 50 karakter olmalıdır' },
         { status: 400 }
@@ -93,6 +106,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Create blog post in PostgreSQL
+    console.log('Creating blog post in database...');
     const blog = await prisma.blogPost.create({
       data: {
         title: title.trim(),
@@ -104,6 +118,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log('Blog post created successfully:', blog.id);
     return NextResponse.json(
       {
         success: true,
@@ -112,10 +127,19 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 }
     );
-  } catch (error) {
-    console.error('Blog creation error:', error);
+  } catch (error: any) {
+    console.error('Blog creation error:', error?.message || error);
+    
+    // Handle database connection errors
+    if (error?.code === 'ECONNREFUSED' || error?.code === 'P1001') {
+      return NextResponse.json(
+        { error: 'Veritabanı bağlantısı başarısız. Lütfen daha sonra deneyiniz.' },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Bir hata oluştu' },
+      { error: error instanceof Error ? error.message : 'Blog yazısı eklenirken hata oluştu' },
       { status: 500 }
     );
   }
@@ -142,5 +166,72 @@ export async function GET() {
 
     console.error('Get blogs error:', error?.message || error);
     return NextResponse.json([], { status: 200 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { id } = await request.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Blog ID gerekli' },
+        { status: 400 }
+      );
+    }
+
+    console.log('Deleting blog with ID:', id);
+
+    // Find blog to get image path
+    const blog = await prisma.blogPost.findUnique({
+      where: { id },
+    });
+
+    if (!blog) {
+      return NextResponse.json(
+        { error: 'Blog yazısı bulunamadı' },
+        { status: 404 }
+      );
+    }
+
+    // Delete image file from filesystem
+    if (blog.image) {
+      try {
+        const imagePath = join(process.cwd(), 'public', blog.image.substring(1));
+        if (existsSync(imagePath)) {
+          unlinkSync(imagePath);
+          console.log('Image file deleted:', imagePath);
+        }
+      } catch (fileError) {
+        console.warn('Could not delete image file:', blog.image, fileError);
+        // Continue with database deletion even if file deletion fails
+      }
+    }
+
+    // Delete blog post from database
+    await prisma.blogPost.delete({
+      where: { id },
+    });
+
+    console.log('Blog post deleted successfully:', id);
+    return NextResponse.json(
+      { success: true, message: 'Blog yazısı silindi' },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error('Blog deletion error:', error?.message || error);
+
+    // Handle database connection errors
+    if (error?.code === 'ECONNREFUSED' || error?.code === 'P1001') {
+      return NextResponse.json(
+        { error: 'Veritabanı bağlantısı başarısız. Lütfen daha sonra deneyiniz.' },
+        { status: 503 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Blog yazısı silinirken hata oluştu' },
+      { status: 500 }
+    );
   }
 }
