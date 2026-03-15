@@ -1,7 +1,11 @@
 {
   "framework": "nextjs",
-  "buildCommand": "next build",
-  "outputDirectory": ".next",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ],
   "env": {
     "DATABASE_URL": "@DATABASE_URL"
   }
